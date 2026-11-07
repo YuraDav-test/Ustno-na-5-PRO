@@ -606,6 +606,9 @@ async function loadEmbeddingModel() {
     for (const opts of attempts) {
       try {
         loaded = await window.pipeline("feature-extraction", "Xenova/rubert-base-cased", opts);
+        embedder = loaded;
+        modelReady = true;
+        console.log("✅ Модель rubert-base-cased успешно загружена и готова к работе.");
         break;
       } catch (e) {
         lastErr = e;
@@ -2389,10 +2392,10 @@ async function analyze(){
   corpusSents.forEach(cs => cs.content.forEach(t => corpusVocab.add(t)));
 
   /* ============ 3. Эмбеддинги или LSA ============ */
-  const useEmb = !!(modelReady && embedder);
+  const useEmb = !!(modelReady && embedder && typeof embedder === 'function');
   let lsa = { ready: false };
-
   if (useEmb) {
+    console.log("🧠 Используем семантические эмбеддинги (rubert-base-cased) для анализа.");
     if (typeof window.updateAnalysisProgress === "function") {
       window.updateAnalysisProgress("Считаю семантические эмбеддинги учебника…");
     }
@@ -2404,6 +2407,7 @@ async function analyze(){
       }
     }
   } else {
+    console.warn("⚠️ Модель не загружена. Используется быстрый LSA-режим. Точность анализа ниже.");
     lsa = buildLSA(corpusSents);
     if (lsa.ready) corpusSents.forEach((s, j) => s.z = lsa.sentZ[j]);
   }
@@ -2459,9 +2463,11 @@ async function analyze(){
 
   /* ============ 5. Сходство ============ */
   function simObj(obj, cs){
+    // Если у обоих объектов есть эмбеддинги — используем их (это самый точный путь)
     if (useEmb && obj.emb && cs.emb) {
       return cosineSimilarity(obj.emb, cs.emb);
     }
+    // Иначе — откат к LSA/TF-IDF
     if (obj.vec && cs.vec) {
       const direct = softCosine(obj.vec, cs.vec);
       if (lsa.ready && obj.z && cs.z) {
@@ -2471,7 +2477,6 @@ async function analyze(){
     }
     return 0;
   }
-
   /* ============ 6. Предложения ученика ============ */
   const usePauseMarks = speechPauseMarks.length > 0 &&
     Math.abs(text.length - finalText.length) < Math.max(50, finalText.length * 0.15);
